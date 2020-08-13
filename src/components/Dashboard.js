@@ -248,7 +248,7 @@ class Dashboard extends Component {
               <LineChart
                 width={window.innerWidth - 150}
                 height={400}
-                data={this.timeSeriesIt(this.state.all).amounts}>
+                data={this.timeSeriesIt(this.state.all).amounts.reverse()}>
                 <Line type='monotone' dataKey='amount' stroke='#8884d8' />
                 <CartesianGrid stroke='#ccc' />
                 <Tooltip content={this.customTooltip} />
