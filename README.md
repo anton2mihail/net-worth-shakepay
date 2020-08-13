@@ -2,8 +2,11 @@ This project was bootstrapped with [Create React App](https://github.com/faceboo
 
 ### Setup
 `git clone {repo}`
+<br/><br/>
 `yarn install`
+<br/><br/>
 `yarn start`
+<br/><br/>
 And you should be good to go!
 
 ## Available Scripts
