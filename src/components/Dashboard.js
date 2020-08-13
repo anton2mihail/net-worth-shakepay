@@ -11,7 +11,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { breakList } from 'prelude-ls';
+import { groupBy, forEach } from 'lodash';
 
 class Dashboard extends Component {
   state = {
@@ -59,7 +59,11 @@ class Dashboard extends Component {
         btc_conversion = json;
       });
 
-    let allTransactions = this.convertAll(all, eth_conversion, btc_conversion);
+    let allTransactions = this.convertAll(
+      all,
+      eth_conversion,
+      btc_conversion
+    ).filter((el) => el.type !== 'conversion');
     this.setState({
       all: [...allTransactions, ...this.state.supplementaryTransactions].sort(
         this.compareDate
@@ -139,9 +143,18 @@ class Dashboard extends Component {
     });
   };
 
-  mergeItems = (a, b) => {
-    return {};
-  };
+  // mergeSameDates = (all) => {
+  //   let dates = all.map((el) => {date: moment(el.createdAt).format("MMM YYYY")})
+  //   dates = groupBy(dates, (el) => el.date);
+
+  //   forEach(dates, (el, key) => {
+
+  //   })
+
+  //   return all.reduce((acc, el) => {
+  //     let newValue
+  //   },[]);
+  // };
 
   convertAll = (all, btc_conversion, eth_conversion) => {
     return all.map((transaction) => {
