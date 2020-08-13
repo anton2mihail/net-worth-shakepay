@@ -11,17 +11,16 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import { breakList } from 'prelude-ls';
 
 class Dashboard extends Component {
   state = {
-    cad: [],
-    btc: [],
-    eth: [],
     all: [],
-    width: 0,
+    supplementaryTransactions: [],
   };
-  componentDidMount() {
-    fetch(
+  componentDidMount = async () => {
+    let all, eth_conversion, btc_conversion;
+    await fetch(
       'https://shakepay.github.io/programming-exercise/web/transaction_history.json'
     )
       .then((response) => {
@@ -35,9 +34,9 @@ class Dashboard extends Component {
         // let btc = json.filter((el) => el.currency === 'BTC');
         // let eth = json.filter((el) => el.currency === 'ETH');
 
-        this.setState({ all: json.sort(this.compareDate) });
+        all = json.sort(this.compareDate);
       });
-    fetch(
+    await fetch(
       'https://shakepay.github.io/programming-exercise/web/rates_CAD_ETH.json'
     )
       .then((response) => {
@@ -46,9 +45,9 @@ class Dashboard extends Component {
       .then((json) => {
         console.log(json);
 
-        this.setState({ eth_conversion: json.sort(this.compareDate) });
+        eth_conversion = json;
       });
-    fetch(
+    await fetch(
       'https://shakepay.github.io/programming-exercise/web/rates_CAD_BTC.json'
     )
       .then((response) => {
@@ -57,9 +56,30 @@ class Dashboard extends Component {
       .then((json) => {
         console.log(json);
 
-        this.setState({ btc_conversion: json.sort(this.compareDate) });
+        btc_conversion = json;
       });
-  }
+
+    let allTransactions = this.convertAll(all, eth_conversion, btc_conversion);
+    this.setState({
+      all: [...allTransactions, ...this.state.supplementaryTransactions].sort(
+        this.compareDate
+      ),
+    });
+  };
+
+  findSameDate = (currentDate, conv) => {
+    let found = conv.find((el) => {
+      let that = el.createdAt;
+      return moment(that).isSame(currentDate, 'day');
+    });
+    if (!found) {
+      found = conv.find((el) => {
+        let that = el.createdAt;
+        return moment(that).diff(currentDate, 'months') <= 4;
+      });
+    }
+    return found;
+  };
 
   compareDate = (a, b) => {
     let da = moment(a);
@@ -74,9 +94,9 @@ class Dashboard extends Component {
     return 0;
   };
 
-  timeSeriesIt = (values, type) => {
+  timeSeriesIt = (all) => {
     let timeSeries = [];
-    let currentBalance = values.reduce((acc, el) => {
+    let currentBalance = all.reduce((acc, el) => {
       let next = acc + el.amount;
       timeSeries.push({
         amount: next,
@@ -85,53 +105,116 @@ class Dashboard extends Component {
       return next;
     }, 0);
 
-    return { type: type, amounts: timeSeries, currentBalance };
+    return { amounts: timeSeries, currentBalance };
   };
 
-  getCleanEth = (eth) => {
-    return eth
-      .map((el) => {
-        let amt = el.amount;
-        if (el.direction === 'debit') amt = -amt;
-        return {
-          ...el,
-          amount: amt,
-        };
-      })
-      .sort(this.compareDate);
+  createSupplementaryTransactions = (
+    transaction,
+    conversion,
+    type,
+    reverse,
+    rConversion
+  ) => {
+    let cadFromAmount = transaction.from.amount * conversion.midMarketRate;
+
+    let cadToAmount = transaction.to.amount;
+
+    if (transaction.to.currency === reverse) {
+      cadToAmount = transaction.to.amount * rConversion.midMarketRate;
+    }
+    this.setState({
+      supplementaryTransactions: [
+        ...this.state.supplementaryTransactions,
+        {
+          createdAt: transaction.createdAt,
+          amount: -cadFromAmount,
+          currency: transaction.from.currency,
+        },
+        {
+          createdAt: transaction.createdAt,
+          amount: cadToAmount,
+          currency: transaction.to.currency,
+        },
+      ],
+    });
   };
 
-  getCleanBtc = (btc) => {
-    return btc
-      .map((el) => {
-        let amt = el.amount;
-        if (el.direction === 'debit') amt = -amt;
-        return {
-          ...el,
-          amount: amt,
-        };
-      })
-      .sort(this.compareDate);
+  mergeItems = (a, b) => {
+    return {};
   };
 
-  getCleanCad = (cad) => {
-    return cad
-      .map((el) => {
-        let amt = el.amount;
-        if (el.direction === 'debit') amt = -amt;
-        return {
-          ...el,
-          amount: amt,
-        };
-      })
-      .sort(this.compareDate);
+  convertAll = (all, btc_conversion, eth_conversion) => {
+    return all.map((transaction) => {
+      let cadValue, conversion;
+      let currentDate = moment(transaction.createdAt).format('MMM DD YYYY');
+
+      if (transaction.currency === 'BTC') {
+        conversion = this.findSameDate(currentDate, btc_conversion);
+
+        cadValue = transaction.amount * conversion.midMarketRate;
+
+        if (transaction.direction === 'debit') cadValue = -cadValue;
+
+        if (transaction.type === 'conversion') {
+          this.createSupplementaryTransactions(
+            transaction,
+            conversion,
+            'BTC',
+            'ETH',
+            eth_conversion
+          );
+        }
+      } else if (transaction.currency === 'ETH') {
+        conversion = this.findSameDate(currentDate, eth_conversion);
+
+        cadValue = transaction.amount * conversion.midMarketRate;
+        if (transaction.direction === 'debit') cadValue = -cadValue;
+
+        if (transaction.type === 'conversion') {
+          this.createSupplementaryTransactions(
+            transaction,
+            conversion,
+            'ETH',
+            'BTC',
+            this.findSameDate(currentDate, btc_conversion)
+          );
+        }
+      } else {
+        cadValue = transaction.amount;
+        if (transaction.direction === 'debit') cadValue = -cadValue;
+
+        if (transaction.type === 'conversion') {
+          let rConv;
+          if (transaction.to.currency === 'BTC') {
+            conversion = this.findSameDate(currentDate, btc_conversion);
+            rConv = this.findSameDate(currentDate, eth_conversion);
+          } else if (transaction.to.currency === 'ETH') {
+            conversion = this.findSameDate(currentDate, eth_conversion);
+            rConv = this.findSameDate(currentDate, btc_conversion);
+          }
+          this.createSupplementaryTransactions(
+            transaction,
+            conversion,
+            'CAD',
+            transaction.to.currency,
+            rConv
+          );
+        }
+      }
+      return {
+        ...transaction,
+        amount: cadValue,
+        date: moment(transaction).format('MMM YYYY'),
+      };
+    });
   };
+
   customTooltip = ({ active, payload, label }) => {
     if (active) {
       return (
         <div className='custom-tooltip'>
           <p className='label'>On {label}</p>
-          <p className='intro'>You Had {payload[0].value} </p>
+          <p className='intro'>You Had {payload[0].value} CAD</p>
           <p className='desc'></p>
         </div>
       );
@@ -150,11 +233,9 @@ class Dashboard extends Component {
               <Card.Header>Net CAD Balance Over Time</Card.Header>
               <br />
               <LineChart
-                width={window.innerWidth - 200}
+                width={window.innerWidth - 150}
                 height={400}
-                data={
-                  this.timeSeriesIt(this.getCleanEth(this.state.eth)).amounts
-                }>
+                data={this.timeSeriesIt(this.state.all).amounts}>
                 <Line type='monotone' dataKey='amount' stroke='#8884d8' />
                 <CartesianGrid stroke='#ccc' />
                 <Tooltip content={this.customTooltip} />
